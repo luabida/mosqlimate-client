@@ -16,6 +16,22 @@ class AsyncContextManagerMock:
         pass
 
 
+def make_aiohttp_list_patch(pages):
+    responses = []
+    for page in pages:
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=page)
+        mock_resp.raise_for_status = MagicMock()
+        responses.append(AsyncContextManagerMock(mock_resp))
+
+    session_mock = AsyncMock()
+    session_mock.get = MagicMock(side_effect=responses)
+    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+    session_mock.__aexit__ = AsyncMock(return_value=None)
+    return session_mock
+
+
 def make_aiohttp_patch(item_list):
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -156,12 +172,15 @@ class TestMosquito:
             mock_response.json.return_value = {
                 "paths": mock_openapi_response["paths"]
             }
-            mock_response_2 = MagicMock()
-            mock_response_2.json.return_value = {"items": []}
-            mock_response_2.status_code = 200
-            mock_get.side_effect = [mock_response, mock_response_2]
+            mock_get.return_value = mock_response
 
-            session_mock = make_aiohttp_patch([])
+            session_mock = make_aiohttp_list_patch(
+                [
+                    [{"counting_id": 1}, {"counting_id": 2}],
+                    [{"counting_id": 3}],
+                    [],
+                ]
+            )
             with patch(
                 "mosqlient.client.ClientSession", return_value=session_mock
             ):
@@ -171,3 +190,4 @@ class TestMosquito:
                     date_end=date(2024, 12, 31),
                 )
                 assert isinstance(result, list)
+                assert [item["counting_id"] for item in result] == [1, 2, 3]

@@ -191,7 +191,7 @@ class TestMosquitoGETParams:
             date_end=date(2024, 12, 31),
             state="MG",
             municipality="Ponta Porã",
-            page_=1,
+            page=1,
         )
         params = p.params()
         assert params["state"] == "MG"

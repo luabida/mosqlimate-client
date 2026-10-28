@@ -16,6 +16,22 @@ class AsyncContextManagerMock:
         pass
 
 
+def make_aiohttp_list_patch(pages):
+    responses = []
+    for page in pages:
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=page)
+        mock_resp.raise_for_status = MagicMock()
+        responses.append(AsyncContextManagerMock(mock_resp))
+
+    session_mock = AsyncMock()
+    session_mock.get = MagicMock(side_effect=responses)
+    session_mock.__aenter__ = AsyncMock(return_value=session_mock)
+    session_mock.__aexit__ = AsyncMock(return_value=None)
+    return session_mock
+
+
 def make_aiohttp_patch(item_list):
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -268,12 +284,9 @@ class TestGetMosquito:
             mock_response.json.return_value = {
                 "paths": mock_openapi_response["paths"]
             }
-            mock_response_2 = MagicMock()
-            mock_response_2.json.return_value = {"items": []}
-            mock_response_2.status_code = 200
-            mock_get.side_effect = [mock_response, mock_response_2]
+            mock_get.return_value = mock_response
 
-            session_mock = make_aiohttp_patch([])
+            session_mock = make_aiohttp_list_patch([[]])
             with patch(
                 "mosqlient.client.ClientSession", return_value=session_mock
             ):
@@ -292,17 +305,60 @@ class TestGetMosquito:
             mock_response.json.return_value = {
                 "paths": mock_openapi_response["paths"]
             }
-            mock_response_2 = MagicMock()
-            mock_response_2.json.return_value = {"items": []}
-            mock_response_2.status_code = 200
-            mock_get.side_effect = [mock_response, mock_response_2]
+            mock_get.return_value = mock_response
 
-            session_mock = make_aiohttp_patch([])
+            session_mock = make_aiohttp_list_patch([[]])
             with patch(
                 "mosqlient.client.ClientSession", return_value=session_mock
             ):
                 result = get_mosquito(api_key=valid_api_key)
                 assert len(result) == 0
+
+    def test_get_mosquito_fetches_all_pages(
+        self, valid_api_key, mock_openapi_response
+    ):
+        pages = [
+            [{"counting_id": 1}, {"counting_id": 2}],
+            [{"counting_id": 3}, {"counting_id": 4}],
+            [],
+        ]
+        with patch("mosqlient.client.requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "paths": mock_openapi_response["paths"]
+            }
+            mock_get.return_value = mock_response
+
+            session_mock = make_aiohttp_list_patch(pages)
+            with patch(
+                "mosqlient.client.ClientSession", return_value=session_mock
+            ):
+                result = get_mosquito(api_key=valid_api_key)
+
+        assert result["counting_id"].tolist() == [1, 2, 3, 4]
+        requested_pages = [
+            call.kwargs["params"]["page"]
+            for call in session_mock.get.call_args_list
+        ]
+        assert requested_pages == [1, 2, 3]
+
+    def test_get_mosquito_explicit_page(
+        self, valid_api_key, mock_openapi_response
+    ):
+        with patch("mosqlient.client.requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "paths": mock_openapi_response["paths"]
+            }
+            mock_page = MagicMock()
+            mock_page.status_code = 200
+            mock_page.json.return_value = [{"counting_id": 20}]
+            mock_get.side_effect = [mock_response, mock_page]
+
+            result = get_mosquito(api_key=valid_api_key, page=2)
+
+        assert result["counting_id"].tolist() == [20]
+        assert mock_get.call_args_list[1].kwargs["params"]["page"] == "2"
 
 
 class TestDatastoreParameterAliases:

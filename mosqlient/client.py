@@ -8,7 +8,7 @@ import os
 import time
 from collections import defaultdict
 from itertools import chain
-from typing import Literal, List, Optional
+from typing import Any, Literal, List, Optional
 
 from aiohttp import (
     ClientSession,
@@ -159,9 +159,11 @@ class Mosqlient:
                 logger.error(res.text)
                 raise err
             data = res.json()
-            if "message" in data:
-                logger.warning(data["message"])
-            return data["items"]
+            if isinstance(data, dict):
+                if "message" in data:
+                    logger.warning(data["message"])
+                return data["items"]
+            return data
 
         return self.__get_all_sync(url=url, params=parse_params(**_params))
 
@@ -259,7 +261,7 @@ class Mosqlient:
         url: str,
         params: dict,
         retries: int = 3,
-    ) -> dict:
+    ) -> Any:
         headers = {"X-UID-Key": self.X_UID_KEY}
         try:
             if retries < 0:
@@ -306,6 +308,12 @@ class Mosqlient:
         ) as session:
             params["page"] = 1
             first_page = await self.__aget(session, url, params)
+
+            if isinstance(first_page, list):
+                return await self.__get_all_list(
+                    session, url, params, first_page
+                )
+
             total_pages = first_page["pagination"]["total_pages"]
 
             results = [first_page]
@@ -335,6 +343,49 @@ class Mosqlient:
                 )
 
             return list(chain.from_iterable(res["items"] for res in results))
+
+    async def __get_all_list(
+        self,
+        session: ClientSession,
+        url: str,
+        params: dict,
+        first_page: List[dict],
+    ) -> List[dict]:
+        if not first_page:
+            return []
+
+        if self.is_demo_user:
+            logger.warning(
+                "Demo users are limited to the first page of results. "
+                "To access all pages, please register at www.mosqlimate.org "
+                "and use your own api_key."
+            )
+            return list(first_page)
+
+        results = list(first_page)
+        page_size = len(first_page)
+        page = 2
+        # The datastore API caps pagination at page 100.
+        while page <= 100:
+            params_c = params.copy()
+            params_c["page"] = page
+            try:
+                data = await self.__aget(session, url, params_c)
+            except ClientResponseError as err:
+                if err.status == 402:
+                    break
+                raise
+
+            items = data if isinstance(data, list) else data.get("items", [])
+            if not items:
+                break
+
+            results.extend(items)
+            if len(items) < page_size:
+                break
+            page += 1
+
+        return results
 
     def __get_all_sync(self, url: str, params: dict) -> List[dict]:
         async def fetch_all():

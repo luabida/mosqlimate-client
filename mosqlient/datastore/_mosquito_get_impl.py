@@ -33,6 +33,7 @@ def get_mosquito(
         municipality : str, optional
             Name of the municipality. Example: "Ponta Porã"
         page : int, optional
+            Page number. If omitted, all pages are fetched.
         uf : str or int, optional
             Alias for `state`.
         adm_1 : types.ADM1, optional

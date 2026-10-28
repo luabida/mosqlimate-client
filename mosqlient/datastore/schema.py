@@ -176,7 +176,7 @@ class MosquitoGETParams(types.Params):
         validation_alias=AliasChoices("state", "uf", "adm_1"),
     )
     municipality: Optional[str] = None
-    page_: Optional[int] = None
+    page: Optional[int] = None
 
     def params(self) -> dict:
         p = {
@@ -184,6 +184,6 @@ class MosquitoGETParams(types.Params):
             "date_end": self.date_end,
             "state": self.state,
             "municipality": self.municipality,
-            "page": self.page_,
+            "page": self.page,
         }
         return {k: v for k, v in p.items() if v is not None}

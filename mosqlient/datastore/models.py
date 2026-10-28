@@ -157,6 +157,6 @@ class Mosquito(types.Model):
             date_end=date_end,
             state=state,
             municipality=municipality,
-            page_=page,
+            page=page,
         )
         return client.get(params=params)
